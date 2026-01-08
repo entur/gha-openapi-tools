@@ -1,0 +1,29 @@
+# Dependency caches
+node_modules/
+
+# Generated code (CI outputs)
+generated/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Reports (compile/verify output)
+reports/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+
+# OpenAPI Generator
+.openapi-generator/

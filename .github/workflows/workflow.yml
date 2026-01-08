@@ -1,0 +1,195 @@
+name: gha-openapi-tools
+
+on:
+  workflow_call:
+    inputs:
+      spec_path:
+        description: Path to the OpenAPI spec in the caller repo
+        required: true
+        type: string
+      mode:
+        description: Which generator types to run (server, client, both)
+        default: server
+        type: string
+      server_generators:
+        description: Comma-separated server generator names (defaults to all in server_config_dir)
+        required: false
+        type: string
+      client_generators:
+        description: Comma-separated client generator names (defaults to all in client_config_dir)
+        required: false
+        type: string
+      server_config_dir:
+        description: Path to server generator configs in this repo
+        default: generators/server
+        type: string
+      client_config_dir:
+        description: Path to client generator configs in this repo
+        default: generators/client
+        type: string
+      generator_image:
+        description: Docker image for OpenAPI Generator CLI
+        default: openapitools/openapi-generator-cli:v7.17.0
+        type: string
+      redocly_image:
+        description: Docker image for Redocly CLI
+        default: redocly/cli:1.25.5
+        type: string
+      redocly_config:
+        description: Optional Redocly config path in the caller repo
+        required: false
+        type: string
+      run_compile:
+        description: Compile generated code in Docker
+        default: true
+        type: boolean
+      run_lint:
+        description: Run Redocly linting
+        default: true
+        type: boolean
+      run_generate:
+        description: Run OpenAPI Generator
+        default: true
+        type: boolean
+      run_upload:
+        description: Upload reports artifact
+        default: true
+        type: boolean
+      run_upload_generated:
+        description: Upload generated code artifact
+        default: false
+        type: boolean
+      use_caller_configs:
+        description: Use generator configs from caller repo instead of matrix repo
+        default: false
+        type: boolean
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Resolve matrix repo
+        id: matrix_repo
+        shell: bash
+        run: |
+          ref="${GITHUB_WORKFLOW_REF}"
+          repo="${ref%%/.github/workflows/*}"
+          ref_name="${ref##*@}"
+          echo "repo=${repo}" >> "$GITHUB_OUTPUT"
+          echo "ref=${ref_name}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve matrix paths
+        id: matrix_paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          matrix_path="matrix"
+          echo "matrix_path=${matrix_path}" >> "$GITHUB_OUTPUT"
+          echo "MATRIX_PATH=${matrix_path}" >> "$GITHUB_ENV"
+          echo "REPORTS_DIR=${GITHUB_WORKSPACE}/${matrix_path}/reports" >> "$GITHUB_ENV"
+          echo "STATUS_FILE=${GITHUB_WORKSPACE}/${matrix_path}/reports/status.tsv" >> "$GITHUB_ENV"
+
+      - name: Checkout caller
+        uses: actions/checkout@v4
+        with:
+          path: caller
+
+      - name: Checkout matrix
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.matrix_repo.outputs.repo }}
+          ref: ${{ steps.matrix_repo.outputs.ref }}
+          path: matrix
+
+      - name: Prepare reports
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$REPORTS_DIR"/lint "$REPORTS_DIR"/generate/server "$REPORTS_DIR"/generate/client "$REPORTS_DIR"/compile
+          : > "$STATUS_FILE"
+
+      - name: Ensure spec exists
+        shell: bash
+        run: |
+          spec_path="${{ inputs.spec_path }}"
+          case "$spec_path" in
+            /*)
+              echo "spec_path must be relative to the caller repo"
+              exit 1
+              ;;
+          esac
+          test -f "caller/$spec_path"
+
+      - name: Lint spec (Redocly)
+        id: lint
+        if: inputs.run_lint
+        shell: bash
+        continue-on-error: true
+        env:
+          SPEC_PATH: caller/${{ inputs.spec_path }}
+          REDOCLY_IMAGE: ${{ inputs.redocly_image }}
+          REDOCLY_CONFIG: ${{ inputs.redocly_config && format('caller/{0}', inputs.redocly_config) || '' }}
+          WORKSPACE: ${{ github.workspace }}
+        run: "${MATRIX_PATH}/scripts/lint.sh"
+
+      - name: Generate code (OpenAPI Generator)
+        id: generate
+        if: inputs.run_generate
+        shell: bash
+        continue-on-error: true
+        env:
+          SPEC_PATH: caller/${{ inputs.spec_path }}
+          GENERATOR_IMAGE: ${{ inputs.generator_image }}
+          MODE: ${{ inputs.mode }}
+          SERVER_CONFIG_DIR: ${{ inputs.server_config_dir }}
+          CLIENT_CONFIG_DIR: ${{ inputs.client_config_dir }}
+          SERVER_GENERATORS: ${{ inputs.server_generators }}
+          CLIENT_GENERATORS: ${{ inputs.client_generators }}
+          USE_CALLER_CONFIGS: ${{ inputs.use_caller_configs }}
+          WORKSPACE: ${{ github.workspace }}
+        run: "${MATRIX_PATH}/scripts/generate.sh"
+
+      - name: Compile generated code (docker)
+        id: compile
+        if: inputs.run_compile && inputs.run_generate
+        shell: bash
+        continue-on-error: true
+        env:
+          MODE: ${{ inputs.mode }}
+          SERVER_GENERATORS: ${{ inputs.server_generators }}
+          CLIENT_GENERATORS: ${{ inputs.client_generators }}
+        run: "${MATRIX_PATH}/scripts/compile.sh"
+
+      - name: Summarize results
+        if: always()
+        shell: bash
+        env:
+          RUN_LINT: ${{ inputs.run_lint }}
+          RUN_GENERATE: ${{ inputs.run_generate }}
+          RUN_COMPILE: ${{ inputs.run_compile }}
+          RUN_UPLOAD: ${{ inputs.run_upload }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          GENERATE_OUTCOME: ${{ steps.generate.outcome }}
+          COMPILE_OUTCOME: ${{ steps.compile.outcome }}
+        run: "${MATRIX_PATH}/scripts/summarize.sh"
+
+      - name: Generate HTML dashboard
+        if: always() && inputs.run_upload
+        shell: bash
+        run: "${MATRIX_PATH}/scripts/dashboard.sh"
+
+      - name: Upload reports artifact
+        if: always() && inputs.run_upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-tools-reports
+          path: ${{ env.REPORTS_DIR }}
+
+      - name: Upload generated code artifact
+        if: always() && inputs.run_upload_generated && inputs.run_generate
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi-generated-code
+          path: ${{ env.MATRIX_PATH }}/generated

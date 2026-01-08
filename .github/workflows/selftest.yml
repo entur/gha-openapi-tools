@@ -1,0 +1,14 @@
+name: selftest-gha-openapi-tools
+
+on:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    uses: ./.github/workflows/workflow.yml
+    with:
+      spec_path: fixtures/transport.yaml
+      mode: both
+      # Omit server_generators and client_generators to test ALL available generators
+      run_compile: true
+      run_upload_generated: true
