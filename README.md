@@ -45,7 +45,7 @@ on:
 
 jobs:
   matrix:
-    uses: entur/gha-openapi-tools/.github/workflows/workflow.yml@v1
+    uses: entur/gha-openapi-tools/.github/workflows/workflow.yml@v0
     with:
       spec_path: openapi/your-spec.yaml
       mode: server
@@ -60,7 +60,7 @@ Client-only example:
 ```yaml
 jobs:
   matrix:
-    uses: entur/gha-openapi-tools/.github/workflows/workflow.yml@v1
+    uses: entur/gha-openapi-tools/.github/workflows/workflow.yml@v0
     with:
       spec_path: openapi/your-spec.yaml
       mode: client

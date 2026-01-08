@@ -1,7 +1,9 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this workflow project will be documented in this file.
 
 ## Unreleased
 
-- Initial public release of the reusable workflow and generator configs.
+## 0.1.0 - 08.01.2026
+
+- Initial public repo release of the reusable workflow and generator configs.
