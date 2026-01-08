@@ -74,9 +74,14 @@ jobs:
         id: matrix_repo
         shell: bash
         run: |
-          ref="${GITHUB_WORKFLOW_REF}"
-          repo="${ref%%/.github/workflows/*}"
-          ref_name="${ref##*@}"
+          workflow_ref="${{ github.workflow_ref }}"
+          if [[ -z "${workflow_ref}" ]]; then
+            echo "Unable to resolve workflow ref from github.workflow_ref."
+            exit 1
+          fi
+
+          repo="${workflow_ref%%/.github/workflows/*}"
+          ref_name="${workflow_ref##*@}"
           echo "repo=${repo}" >> "$GITHUB_OUTPUT"
           echo "ref=${ref_name}" >> "$GITHUB_OUTPUT"
 
